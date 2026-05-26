@@ -40,7 +40,52 @@ jobs:
 
   find_exercise:
     name: Find Exercise Issue
-    uses: skills/exercise-toolkit/.github/workflows/find-exercise-issue.yml@v0.4.0
+    runs-on: ubuntu-latest
+    outputs:
+      issue-url: ${{ steps.find-or-create.outputs.issue-url }}
+      issue-number: ${{ steps.find-or-create.outputs.issue-number }}
+    steps:
+      - name: Find exercise by issue title
+        id: find-or-create
+        uses: actions/github-script@v7
+        env:
+          ISSUE_TITLE_TEXT: Exercise
+          DEFAULT_EXERCISE_TITLE: "Exercise: AI Coding Assistant Enablement Bootcamp Session 5"
+        with:
+          script: |
+            const response = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'all',
+              sort: 'created',
+              direction: 'desc',
+              per_page: 100
+            });
+
+            const issues = response.data.filter(item => !item.pull_request);
+            let issue = issues.find(item => item.title.includes(process.env.ISSUE_TITLE_TEXT));
+
+            if (!issue) {
+              const created = await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: process.env.DEFAULT_EXERCISE_TITLE,
+                body: 'Auto-created to continue Step 5-2 workflow automation.'
+              });
+              issue = created.data;
+            } else if (issue.state === 'closed') {
+              const reopened = await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                state: 'open'
+              });
+              issue = reopened.data;
+            }
+
+            core.info(`Exercise issue found: #${issue.number} (${issue.html_url})`);
+            core.setOutput('issue-url', issue.html_url);
+            core.setOutput('issue-number', issue.number);
 
   post_success:
     name: Post success comment
