@@ -90,4 +90,11 @@ app.delete('/api/todos/:id', (req, res) => {
   res.json({ message: 'Todo deleted' });
 });
 
+// Reset function for testing
+function resetState() {
+  todos = [];
+  nextId = 1;
+}
+
 module.exports = app;
+module.exports.resetState = resetState;

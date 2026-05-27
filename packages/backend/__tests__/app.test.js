@@ -1,6 +1,10 @@
 const request = require('supertest');
 const app = require('../src/app');
 
+beforeEach(() => {
+  app.resetState();
+});
+
 describe('TODO API Tests', () => {
   describe('GET /api/todos', () => {
     test('should return an array of todos', async () => {
