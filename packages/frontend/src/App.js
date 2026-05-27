@@ -15,25 +15,30 @@ import {
   CircularProgress,
   Chip,
   Stack,
+  Alert,
 } from '@mui/material';
 import {
   Delete as DeleteIcon,
   Edit as EditIcon,
   Add as AddIcon,
+  Save as SaveIcon,
+  Cancel as CancelIcon,
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import './App.css';
 
-// INTENTIONAL ISSUE: API_URL should use environment variable or relative URL
-const API_URL = 'http://localhost:3001/api/todos';
+// FIXED: Use relative URL instead of hardcoded localhost
+const API_URL = '/api/todos';
 
 // React Query hook for fetching todos
 const useTodos = () => {
   return useQuery({
     queryKey: ['todos'],
-    // INTENTIONAL ISSUE: Missing error handling in query
     queryFn: async () => {
       const response = await fetch(API_URL);
+      if (!response.ok) {
+        throw new Error('Failed to fetch todos');
+      }
       const data = await response.json();
       return data;
     },
@@ -42,10 +47,12 @@ const useTodos = () => {
 
 function App() {
   const [newTodoTitle, setNewTodoTitle] = useState('');
+  const [editingId, setEditingId] = useState(null);
+  const [editingTitle, setEditingTitle] = useState('');
   const queryClient = useQueryClient();
 
   // Fetch todos using React Query
-  const { data: todos = [], isLoading } = useTodos();
+  const { data: todos = [], isLoading, isError, error } = useTodos();
 
   // Mutation for adding a new todo
   const addTodoMutation = useMutation({
@@ -76,14 +83,32 @@ function App() {
     },
   });
 
-  // INTENTIONAL ISSUE: Delete mutation not implemented
+  // FIXED: Implement delete mutation
   const deleteTodoMutation = useMutation({
     mutationFn: async (id) => {
-      // TODO: Implement delete functionality
-      // Missing: await fetch(`${API_URL}/${id}`, { method: 'DELETE' });
+      await fetch(`${API_URL}/${id}`, { 
+        method: 'DELETE' 
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['todos'] });
+    },
+  });
+
+  // FIXED: Implement edit mutation
+  const editTodoMutation = useMutation({
+    mutationFn: async ({ id, title }) => {
+      const response = await fetch(`${API_URL}/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title }),
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['todos'] });
+      setEditingId(null);
+      setEditingTitle('');
     },
   });
 
@@ -102,8 +127,25 @@ function App() {
     deleteTodoMutation.mutate(id);
   };
 
-  // INTENTIONAL ISSUE: Edit functionality not implemented
-  // const handleEditTodo = (id, newTitle) => { ... }
+  const handleStartEdit = (id, title) => {
+    setEditingId(id);
+    setEditingTitle(title);
+  };
+
+  const handleSaveEdit = (id) => {
+    if (editingTitle.trim()) {
+      editTodoMutation.mutate({ id, title: editingTitle });
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setEditingTitle('');
+  };
+
+  // FIXED: Calculate stats from todos array
+  const incompleteTodos = todos.filter(todo => !todo.completed).length;
+  const completedTodos = todos.filter(todo => todo.completed).length;
 
   return (
     <Box
@@ -159,66 +201,126 @@ function App() {
           </CardContent>
         </Card>
 
+        {/* FIXED: Error handling */}
+        {isError && (
+          <Alert severity="error" sx={{ mb: 3 }}>
+            Error loading todos: {error?.message || 'Unknown error'}
+          </Alert>
+        )}
+
         {isLoading && (
           <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
             <CircularProgress />
           </Box>
         )}
 
-        {/* INTENTIONAL ISSUE: No empty state message when todos.length === 0 */}
-
-        <Card>
-          <List sx={{ p: 0 }}>
-            {todos.map((todo, index) => (
-              <ListItem
-                key={todo.id}
-                sx={{
-                  borderBottom: index < todos.length - 1 ? 1 : 0,
-                  borderColor: 'divider',
-                  '&:hover': {
-                    bgcolor: 'action.hover',
-                  },
-                }}
+        {/* FIXED: Empty state message */}
+        {!isLoading && !isError && todos.length === 0 && (
+          <Card>
+            <CardContent>
+              <Typography
+                variant="body1"
+                color="text.secondary"
+                align="center"
+                sx={{ py: 4 }}
               >
-                <Checkbox
-                  checked={todo.completed}
-                  onChange={() => handleToggleTodo(todo.id)}
-                  sx={{ mr: 2 }}
-                />
-                <Typography
+                No todos yet! Add one above to get started.
+              </Typography>
+            </CardContent>
+          </Card>
+        )}
+
+        {!isLoading && !isError && todos.length > 0 && (
+          <Card>
+            <List sx={{ p: 0 }}>
+              {todos.map((todo, index) => (
+                <ListItem
+                  key={todo.id}
                   sx={{
-                    flex: 1,
-                    textDecoration: todo.completed ? 'line-through' : 'none',
-                    color: todo.completed ? 'text.secondary' : 'text.primary',
+                    borderBottom: index < todos.length - 1 ? 1 : 0,
+                    borderColor: 'divider',
+                    '&:hover': {
+                      bgcolor: 'action.hover',
+                    },
                   }}
                 >
-                  {todo.title}
-                </Typography>
-                <Stack direction="row" spacing={1}>
-                  <IconButton
-                    size="small"
-                    color="primary"
-                    onClick={() => {/* Edit not implemented */}}
-                  >
-                    <EditIcon />
-                  </IconButton>
-                  <IconButton
-                    size="small"
-                    color="error"
-                    onClick={() => handleDeleteTodo(todo.id)}
-                  >
-                    <DeleteIcon />
-                  </IconButton>
-                </Stack>
-              </ListItem>
-            ))}
-          </List>
-        </Card>
+                  <Checkbox
+                    checked={todo.completed}
+                    onChange={() => handleToggleTodo(todo.id)}
+                    sx={{ mr: 2 }}
+                  />
+                  
+                  {editingId === todo.id ? (
+                    <TextField
+                      fullWidth
+                      value={editingTitle}
+                      onChange={(e) => setEditingTitle(e.target.value)}
+                      size="small"
+                      sx={{ mr: 2 }}
+                    />
+                  ) : (
+                    <Typography
+                      sx={{
+                        flex: 1,
+                        textDecoration: todo.completed ? 'line-through' : 'none',
+                        color: todo.completed ? 'text.secondary' : 'text.primary',
+                      }}
+                    >
+                      {todo.title}
+                    </Typography>
+                  )}
+                  
+                  <Stack direction="row" spacing={1}>
+                    {editingId === todo.id ? (
+                      <>
+                        <IconButton
+                          size="small"
+                          color="success"
+                          onClick={() => handleSaveEdit(todo.id)}
+                          aria-label="save"
+                        >
+                          <SaveIcon />
+                        </IconButton>
+                        <IconButton
+                          size="small"
+                          color="default"
+                          onClick={handleCancelEdit}
+                          aria-label="cancel"
+                        >
+                          <CancelIcon />
+                        </IconButton>
+                      </>
+                    ) : (
+                      <>
+                        <IconButton
+                          size="small"
+                          color="primary"
+                          onClick={() => handleStartEdit(todo.id, todo.title)}
+                          aria-label="edit"
+                        >
+                          <EditIcon />
+                        </IconButton>
+                        <IconButton
+                          size="small"
+                          color="error"
+                          onClick={() => handleDeleteTodo(todo.id)}
+                          aria-label="delete"
+                        >
+                          <DeleteIcon />
+                        </IconButton>
+                      </>
+                    )}
+                  </Stack>
+                </ListItem>
+              ))}
+            </List>
+          </Card>
+        )}
 
-        {/* INTENTIONAL ISSUE: Stats always show 0 instead of calculating from todos */}
+        {/* FIXED: Stats calculate from todos array */}
         <Box sx={{ mt: 3, display: 'flex', justifyContent: 'center', gap: 2 }}>
-          <Chip label={`${0} items left`} color="primary" />
-          <Chip label={`${0} completed`} color="success" />
+          <Chip label={`${incompleteTodos} items left`} color="primary" />
+          <Chip label={`${completedTodos} completed`} color="success" />
         </Box>
       </Container>
     </Box>
